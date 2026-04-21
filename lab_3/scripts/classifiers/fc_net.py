@@ -55,7 +55,10 @@ class TwoLayerNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        self.params["W1"] = weight_scale * np.random.randn(input_dim, hidden_dim)
+        self.params["b1"] = np.zeros(hidden_dim)
+        self.params["W2"] = weight_scale * np.random.randn(hidden_dim, num_classes)
+        self.params["b2"] = np.zeros(num_classes)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -88,7 +91,8 @@ class TwoLayerNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        out1, cache1 = affine_relu_forward(X, self.params["W1"], self.params["b1"])
+        scores, cache2 = affine_forward(out1, self.params["W2"], self.params["b2"])
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -112,7 +116,16 @@ class TwoLayerNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        loss, dscores = softmax_loss(scores, y)
+        loss += 0.5 * self.reg * (
+            np.sum(self.params["W1"] ** 2) + np.sum(self.params["W2"] ** 2)
+        )
+
+        dx2, grads["W2"], grads["b2"] = affine_backward(dscores, cache2)
+        dx1, grads["W1"], grads["b1"] = affine_relu_backward(dx2, cache1)
+
+        grads["W2"] += self.reg * self.params["W2"]
+        grads["W1"] += self.reg * self.params["W1"]
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -192,7 +205,16 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        dims = [input_dim] + hidden_dims + [num_classes]
+
+        for i in range(self.num_layers):
+            self.params[f"W{i+1}"] = weight_scale * np.random.randn(dims[i], dims[i + 1])
+            self.params[f"b{i+1}"] = np.zeros(dims[i + 1])
+
+        if self.normalization == "batchnorm":
+            for i in range(self.num_layers - 1):
+                self.params[f"gamma{i+1}"] = np.ones(dims[i + 1])
+                self.params[f"beta{i+1}"] = np.zeros(dims[i + 1])
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -254,7 +276,33 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        caches = {}
+        dropout_caches = {}
+        out = X
+
+        for i in range(1, self.num_layers):
+            W = self.params[f"W{i}"]
+            b = self.params[f"b{i}"]
+
+            if self.normalization == "batchnorm":
+                gamma = self.params[f"gamma{i}"]
+                beta = self.params[f"beta{i}"]
+
+                a, fc_cache = affine_forward(out, W, b)
+                bn, bn_cache = batchnorm_forward(a, gamma, beta, self.bn_params[i - 1])
+                out, relu_cache = relu_forward(bn)
+                caches[i] = (fc_cache, bn_cache, relu_cache)
+            else:
+                out, cache = affine_relu_forward(out, W, b)
+                caches[i] = cache
+
+            if self.use_dropout:
+                out, do_cache = dropout_forward(out, self.dropout_param)
+                dropout_caches[i] = do_cache
+
+        W_last = self.params[f"W{self.num_layers}"]
+        b_last = self.params[f"b{self.num_layers}"]
+        scores, final_cache = affine_forward(out, W_last, b_last)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -281,7 +329,29 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        loss, dscores = softmax_loss(scores, y)
+
+        for i in range(1, self.num_layers + 1):
+            loss += 0.5 * self.reg * np.sum(self.params[f"W{i}"] ** 2)
+
+        dout, grads[f"W{self.num_layers}"], grads[f"b{self.num_layers}"] = affine_backward(
+            dscores, final_cache
+        )
+        grads[f"W{self.num_layers}"] += self.reg * self.params[f"W{self.num_layers}"]
+
+        for i in range(self.num_layers - 1, 0, -1):
+            if self.use_dropout:
+                dout = dropout_backward(dout, dropout_caches[i])
+
+            if self.normalization == "batchnorm":
+                fc_cache, bn_cache, relu_cache = caches[i]
+                drelu = relu_backward(dout, relu_cache)
+                dbn, grads[f"gamma{i}"], grads[f"beta{i}"] = batchnorm_backward(drelu, bn_cache)
+                dout, grads[f"W{i}"], grads[f"b{i}"] = affine_backward(dbn, fc_cache)
+            else:
+                dout, grads[f"W{i}"], grads[f"b{i}"] = affine_relu_backward(dout, caches[i])
+
+            grads[f"W{i}"] += self.reg * self.params[f"W{i}"]
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
